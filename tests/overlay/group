@@ -65,3 +65,4 @@
 060 auto quick metacopy
 061 auto quick copyup
 062 auto stress fsck
+063 auto quick fsck

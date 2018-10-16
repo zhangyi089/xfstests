@@ -195,12 +195,16 @@ _overlay_fsck_dirs()
 	local lowerdir=$1
 	local upperdir=$2
 	local workdir=$3
+	local dirs=""
 	shift 3
 
 	[[ ! -x "$FSCK_OVERLAY_PROG" ]] && return 0
 
-	$FSCK_OVERLAY_PROG -o lowerdir=$lowerdir -o upperdir=$upperdir \
-			   -o workdir=$workdir $*
+	[[ -n "$lowerdir" ]] && dirs=$(echo -n "-o lowerdir=$lowerdir")
+	[[ -n "$upperdir" ]] && dirs=$(echo -n "$dirs -o upperdir=$upperdir")
+	[[ -n "$workdir" ]] && dirs=$(echo -n "$dirs -o workdir=$workdir")
+
+	$FSCK_OVERLAY_PROG $dirs $*
 }
 
 # Run fsck and check the return value
