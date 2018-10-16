@@ -12,6 +12,16 @@ export OVL_XATTR_NLINK="trusted.overlay.nlink"
 export OVL_XATTR_UPPER="trusted.overlay.upper"
 export OVL_XATTR_METACOPY="trusted.overlay.metacopy"
 
+# Export exit code used by fsck.overlay program
+export FSCK_OK=0
+export FSCK_NONDESTRUCT=1
+export FSCK_REBOOT=2
+export FSCK_UNCORRECTED=4
+export FSCK_ERROR=8
+export FSCK_USAGE=16
+export FSCK_CANCELED=32
+export FSCK_LIBRARY=128
+
 # helper function to do the actual overlayfs mount operation
 _overlay_mount_dirs()
 {
@@ -191,6 +201,25 @@ _overlay_fsck_dirs()
 
 	$FSCK_OVERLAY_PROG -o lowerdir=$lowerdir -o upperdir=$upperdir \
 			   -o workdir=$workdir $*
+}
+
+# Run fsck and check the return value
+_run_check_fsck()
+{
+	# The first arguments is the expected fsck program exit code, the
+	# remaining arguments are the input parameters of the fsck program.
+	local expect_ret=$1
+	local lowerdir=$2
+	local upperdir=$3
+	local workdir=$4
+	shift 4
+
+	_overlay_fsck_dirs $lowerdir $upperdir $workdir $* >> \
+			$seqres.full 2>&1
+	fsck_ret=$?
+
+	[[ "$fsck_ret" == "$expect_ret" ]] || \
+		echo "fsck return unexpected value:$expect_ret,$fsck_ret"
 }
 
 _overlay_check_dirs()
