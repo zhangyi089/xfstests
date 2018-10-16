@@ -1,0 +1,84 @@
+#! /bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2018 Huawei.  All Rights Reserved.
+#
+# FS QA Test No. 062
+#
+# Stress test: test fsck.overlay running on the underlying dirs
+# which were created by fsstress.
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$seq
+echo "QA output created by $seq"
+
+here=`pwd`
+tmp=/tmp/$$
+status=1        # failure is the default!
+trap "_cleanup; exit \$status" 0 1 2 3 15
+
+_cleanup()
+{
+	cd /
+	rm -f $tmp.*
+}
+
+# get standard environment, filters and checks
+. ./common/rc
+. ./common/filter
+. ./common/attr
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+_supported_fs overlay
+_supported_os Linux
+_require_scratch_nocheck
+_require_command "$FSCK_OVERLAY_PROG" fsck.overlay
+
+# remove all files from previous tests
+_scratch_mkfs
+
+# Create an underlying layer which contain a lot of random objects
+create_layer()
+{
+	for dir in $*; do
+		seed=$RANDOM
+		echo "create random file system objects in $dir with seed $seed" \
+			>> $seqres.full
+
+		$FSSTRESS_PROG -s $seed -d $dir -z \
+			-f creat=20 -f link=10 -f mkdir=20 -f mknod=10 \
+			-f rename=10 -f setxattr=10 -f symlink=10 -f write=10 \
+			-p 4 -n 500 -l50 > /dev/null 2>&1
+	done
+}
+
+
+# Create test directories
+lowerdir=$OVL_BASE_SCRATCH_MNT/$seq-ovl-lower
+lowerdir2=$OVL_BASE_SCRATCH_MNT/$seq-ovl-lower2
+upperdir=$OVL_BASE_SCRATCH_MNT/$seq-ovl-upper
+workdir=$OVL_BASE_SCRATCH_MNT/$seq-ovl-workdir
+
+make_test_dirs()
+{
+	rm -rf $lowerdir $lowerdir2 $upperdir $workdir
+	mkdir -p $lowerdir $lowerdir2 $upperdir $workdir
+}
+
+
+# Test stability, should not crash and should not fail on "yes" mode.
+make_test_dirs
+create_layer $lowerdir2 $lowerdir $upperdir
+
+_overlay_fsck_dirs "$lowerdir:$lowerdir2" $upperdir $workdir -y >> \
+	$seqres.full 2>&1
+
+[[ "$?" == "$FSCK_OK" || "$?" == "$FSCK_NONDESTRUCT" ]] || \
+	echo "fsck return unexpected $?"
+
+# success, all done
+echo "Silence is golden"
+status=0
+exit
