@@ -1100,6 +1100,18 @@ _repair_scratch_fs()
 	fi
 	return $res
         ;;
+    overlay)
+	_scratch_overlay_repair $* 2>&1
+	local res=$?
+	case $res in
+	$FSCK_OK|$FSCK_NONDESTRUCT)
+		res=0
+		;;
+	*)
+		_dump_err2 "fsck.overlay failed, err=$res"
+	esac
+	return $res
+	;;
     *)
         # Let's hope fsck -y suffices...
         fsck -t $FSTYP -y $SCRATCH_DEV 2>&1

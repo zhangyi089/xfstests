@@ -353,3 +353,11 @@ _check_overlay_scratch_fs()
 		"$OVL_BASE_SCRATCH_DEV" "$OVL_BASE_SCRATCH_MNT" \
 		$OVL_BASE_MOUNT_OPTIONS $SELINUX_MOUNT_OPTIONS
 }
+
+_scratch_overlay_repair()
+{
+	_overlay_check_dirs $OVL_BASE_SCRATCH_MNT/$OVL_LOWER \
+			    $OVL_BASE_SCRATCH_MNT/$OVL_UPPER \
+			    $OVL_BASE_SCRATCH_MNT/$OVL_WORK \
+			    -y $*
+}
