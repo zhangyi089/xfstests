@@ -9,7 +9,7 @@
 # filesystem shutdown+remount cycle.
 #
 # Stale data beyond EOF can persist on disk when:
-# 1) append write data blocks are flushed before the i_size metadata update,
+# 1) append write data blocks are flushed before the on-disk file size update,
 #    and the system crashes in this window.
 # 2) concurrent append writeback and mmap writes persist non-zero data past EOF.
 #
@@ -27,8 +27,15 @@ _begin_fstest auto quick rw shutdown
 
 _require_scratch
 _require_block_device $SCRATCH_DEV
+_require_no_realtime
 _require_scratch_shutdown
 _require_metadata_journaling $SCRATCH_DEV
+
+# FIEMAP on Btrfs returns logical addresses within the filesystem's address
+# space, not physical device offsets. Writing to these offsets on $SCRATCH_DEV
+# would corrupt the filesystem in multi-device setups.
+_exclude_fs btrfs
+
 _require_xfs_io_command "fiemap"
 _require_xfs_io_command "falloc"
 _require_xfs_io_command "pwrite"
@@ -45,10 +52,10 @@ _check_gap_zero()
 	local data
 	local stripped
 
-	data=$(od -A n -t x1 -j $offset -N $nbytes "$file" 2>/dev/null)
+	data=$(od -A n -t x1 -v -j $offset -N $nbytes "$file" 2>/dev/null)
 
 	# Remove whitespace and check if any byte is non-zero
-	stripped=$(echo "$data" | tr -d ' \n\t')
+	stripped=$(printf '%s' "$data" | tr -d ' \n\t')
 	if [ -n "$stripped" ] && ! echo "$stripped" | grep -qE "^0+$"; then
 		echo "FAIL: non-zero data in gap [$offset,$((offset + nbytes))) $label"
 		_hexdump -N $((offset + nbytes)) "$file"
@@ -78,6 +85,7 @@ _test_eof_zeroing()
 {
 	local test_name="$1"
 	local extend_cmd="$2"
+	local expected_new_sz="$3"
 	local file=$SCRATCH_MNT/testfile_${test_name}
 
 	echo "$test_name" | tee -a $seqres.full
@@ -112,13 +120,6 @@ _test_eof_zeroing()
 		$SCRATCH_DEV >> $seqres.full 2>&1
 	_scratch_mount >> $seqres.full 2>&1
 
-	# Verify file size is still eof_offset after remount
-	local sz
-	sz=$(stat -c %s "$file")
-	if [ "$sz" -ne "$eof_offset" ]; then
-		_fail "$test_name: file size wrong after remount: $sz != $eof_offset"
-	fi
-
 	# Step 5: Execute the extend operation.
 	$XFS_IO_PROG -c "$extend_cmd" "$file" >> $seqres.full 2>&1
 
@@ -137,6 +138,14 @@ _test_eof_zeroing()
 
 	# Step 8: Remount and verify gap is still zeroed
 	_scratch_cycle_mount
+
+	# Verify file size was not rolled back after shutdown+remount
+	local sz
+	sz=$(stat -c %s "$file")
+	if [ "$sz" -ne "$expected_new_sz" ]; then
+		_fail "$test_name: file size rolled back after shutdown+remount: $sz != $expected_new_sz"
+	fi
+
 	_check_gap_zero "$file" $eof_offset $gap_bytes "after shutdown+remount" || return 1
 }
 
@@ -146,9 +155,9 @@ _scratch_mount
 blksz=$(_get_block_size $SCRATCH_MNT)
 
 # Test three variants of EOF-extending operations
-_test_eof_zeroing "append_write" "pwrite -S 0x42 $blksz $blksz"
-_test_eof_zeroing "truncate_up" "truncate $((blksz * 2))"
-_test_eof_zeroing "fallocate" "falloc $blksz $blksz"
+_test_eof_zeroing "append_write" "pwrite -S 0x42 $blksz $blksz" $((blksz * 2))
+_test_eof_zeroing "truncate_up" "truncate $((blksz * 2))" $((blksz * 2))
+_test_eof_zeroing "fallocate" "falloc $blksz $blksz" $((blksz * 2))
 
 # success, all done
 status=0
